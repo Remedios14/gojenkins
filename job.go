@@ -49,9 +49,10 @@ type ParameterDefinition struct {
 		Name  string      `json:"name"`
 		Value interface{} `json:"value"`
 	} `json:"defaultParameterValue"`
-	Description string `json:"description"`
-	Name        string `json:"name"`
-	Type        string `json:"type"`
+	Description string        `json:"description"`
+	Name        string        `json:"name"`
+	Type        string        `json:"type"`
+	Choices     []interface{} `json:"choices"`
 }
 
 type JobResponse struct {
