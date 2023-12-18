@@ -274,18 +274,53 @@ func (j *Jenkins) BuildJob(ctx context.Context, name string, params map[string]s
 
 // A task in queue will be assigned a build number in a job after a few seconds.
 // this function will return the build object.
-func (j *Jenkins) GetBuildFromQueueID(ctx context.Context, queueid int64) (*Build, error) {
+func (j *Jenkins) GetBuildFromQueueIDMaxTries(ctx context.Context, queueid int64, maxTries int) (*Build, error) {
+	var statusCode int
 	task, err := j.GetQueueItem(ctx, queueid)
 	if err != nil {
 		return nil, err
 	}
 	// Jenkins queue API has about 4.7second quiet period
-	for task.Raw.Executable.Number == 0 {
+	for task.Raw.Executable.Number == 0 && maxTries > 0 {
 		time.Sleep(1000 * time.Millisecond)
-		_, err = task.Poll(ctx)
+		statusCode, err = task.Poll(ctx)
 		if err != nil {
 			return nil, err
 		}
+		if statusCode != 200 {
+			maxTries--
+		}
+	}
+	if maxTries <= 0 {
+		return nil, errors.New("Failed after too many tries")
+	}
+
+	buildid := task.Raw.Executable.Number
+	job, err := task.GetJob(ctx)
+	if err != nil {
+		return nil, err
+	}
+	build, err := job.GetBuild(ctx, buildid)
+	if err != nil {
+		return nil, err
+	}
+	return build, nil
+}
+
+// GetBuildFromQueueIDOnce
+func (j *Jenkins) GetBuildFromQueueIDOnce(ctx context.Context, queueid int64) (*Build, error) {
+	var statusCode int
+	task, err := j.GetQueueItem(ctx, queueid)
+	if err != nil {
+		return nil, err
+	}
+
+	statusCode, err = task.Poll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if statusCode != 200 {
+		return nil, nil
 	}
 
 	buildid := task.Raw.Executable.Number
@@ -505,7 +540,7 @@ func (j *Jenkins) HasPlugin(ctx context.Context, name string) (*Plugin, error) {
 	return p.Contains(name), nil
 }
 
-//InstallPlugin with given version and name
+// InstallPlugin with given version and name
 func (j *Jenkins) InstallPlugin(ctx context.Context, name string, version string) error {
 	xml := fmt.Sprintf(`<jenkins><install plugin="%s@%s" /></jenkins>`, name, version)
 	resp, err := j.Requester.PostXML(ctx, "/pluginManager/installNecessaryPlugins", xml, j.Raw, map[string]string{})
@@ -555,11 +590,13 @@ func (j *Jenkins) GetAllViews(ctx context.Context) ([]*View, error) {
 // First Parameter - name of the View
 // Second parameter - Type
 // Possible Types:
-// 		gojenkins.LIST_VIEW
-// 		gojenkins.NESTED_VIEW
-// 		gojenkins.MY_VIEW
-// 		gojenkins.DASHBOARD_VIEW
-// 		gojenkins.PIPELINE_VIEW
+//
+//	gojenkins.LIST_VIEW
+//	gojenkins.NESTED_VIEW
+//	gojenkins.MY_VIEW
+//	gojenkins.DASHBOARD_VIEW
+//	gojenkins.PIPELINE_VIEW
+//
 // Example: jenkins.CreateView("newView",gojenkins.LIST_VIEW)
 func (j *Jenkins) CreateView(ctx context.Context, name string, viewType string) (*View, error) {
 	view := &View{Jenkins: j, Raw: new(ViewResponse), Base: "/view/" + name}
