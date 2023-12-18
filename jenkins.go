@@ -320,6 +320,9 @@ func (j *Jenkins) GetBuildFromQueueIDOnce(ctx context.Context, queueid int64) (*
 		return nil, err
 	}
 	if statusCode != 200 {
+		return nil, errors.New("Bad status code" + strconv.Itoa(statusCode))
+	}
+	if task.Raw.Executable.Number == 0 {
 		return nil, nil
 	}
 
